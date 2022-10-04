@@ -3,84 +3,82 @@ import matplotlib.pyplot as plt
 from scipy import signal
 
 
-
-def DM_delay(self, DM, freq):
+def DM_delay(DM, freq):
     """
-    Compute the dispersion measure pulse delay time.
+    Computes the frequency-dependent dispersion measure
+    time delay.
 
     Inputs:
-        - DM: dispersion measure
-        - freq: frequency
+        - DM [pc*cm^-3]: dispersion measure
+        - freq [MHz]: frequency
     Returns:
-        - pulse delay in [ms]
+        - Pulse time delay in [ms] 
     """
     const = 4140
-    A = DM*4140*1e3
+    A = DM*const*1e3 # 1e3 for conversion to ms
     return A/(freq**2)
 
-
-def smearing(Power, nspec, pulse_width, t_samp):
+def make_frb(nspec=1024, nchans=2048, DM=332.72, pulse_width=2.12, f_min=1150, f_max=1650, t_samp=0.064, offset=0, plot=False):
     """
-    Smears the FRB pulse by convolving it with a gaussian window.
-    
-    Inputs:
-        - Power: power matrix with shape (nchans, nspec)
-        - nspec: number of spectra
-        - pulse_width [ms]: width of the pulse
-        - t_samp [ms]: sampling rate
-    Returns:
-        - Smeared power matrix of shape (nchans, nspec)
-    """
-    FWHM_frac = 2*np.sqrt(2*np.log(2))
-    sigma = pulse_width/FWHM_frac
-    sigma_bins = sigma/t_samp
-    Smeared = np.empty_like(Power)
-    for spec in range(nspec):
-        freq = Power[:, spec]
-        Smeared[:, spec] = np.convolve(freq, signal.windows.gaussian(20, sigma_bins), mode='same')
-    return Smeared
-
-
-def make_frb(nspec=128, nchans=1024, DM=332.72, pulse_width=2, f_min=1150, f_max=1650, t_samp=64e3):
-    """
-    Make an FRB with the specified attributes. FRB is dispersed.
+    Simulates a fast radio burst (FRB) observation given a 
+    certain set of parameters.
 
     Inputs:
         - nspec: number of spectra
         - nchans: number of frequency channels
-        - DM: dispersion measure
-        - pulse_width [ms]: width of the pulse 
-        - f_min [MHz]: bottom frequency of passband
-        - f_max [MHz]: top frequency of passband 
-        - t_samp [ms]: sampling rate
+        - DM [pc*cm^-3]: dispersion measure
+        - pulse_width [ms]: width of FRB pulse
+        - f_min [MHz]: lower frequency of bandwidth
+        - f_max [MHz]: upper frequency of bandwidth
+        - t_samp [ms]: sampling time/time resolution
+        - offset [ms]: offset the pulse start time
+        - plot (bool): plot output results
     Returns:
-        - power matrix of shape (nspec, nchans)
+        - Power matrix of shape (nspec, nchans)
     """
     shape = (nchans, nspec)
-    
     freqs = np.linspace(f_min, f_max, nchans)
-
     t_min = 0
     t_max = t_samp*nspec
-    times = np.linspace(t_min, t_max, nspec)
 
-    signal_power = 10
-
+    signal_power = 0.3
+    
     td0 = DM_delay(DM, f_max)
-    tds = DM_delay(DM, freqs) - td0
-
+    tds = DM_delay(DM, freqs) - td0 + offset
     bins = tds/t_samp
     rounded_bins = np.round(bins).astype(int)
 
-    Image = np.random.randn(np.prod(shape)).reshape(shape)
+    Image = np.random.normal(size=shape, loc=1, scale=0.2) # XXX
+
+    FWHM_frac = 2*np.sqrt(2*np.log(2))
+    sigma = pulse_width/FWHM_frac
+    gauss_window = signal.windows.gaussian(11, sigma/t_samp)
+    
     for i in range(len(Image)):
         index = rounded_bins[i]
-        if index >= nspec:
+        if index >= nspec-5:
             continue
-        Image[i, index] += signal_power
-    Smeared = smearing(Image, nspec, pulse_width, t_samp)
-    return Smeared
+        if index <= 5:
+            continue
+        Image[i, index-5:index+6] += signal_power*gauss_window
+    
+    if plot:
+        fig, ax = plt.subplots(constrained_layout=True)
+        im = ax.imshow(Image, aspect='auto', origin='lower', extent=[t_min, t_max, f_min, f_max])
 
+        ax.set_xlabel('Time [ms]')
+        ax.set_ylabel('Frequency [MHz]')
+        ax.set_xlim(t_min, t_max)
+        ax.set_ylim(f_min, f_max)
 
+        ax2 = ax.twinx()
+        ax2.set_ylim(0, nchans)
+        ax2.set_ylabel('Channel', rotation=270, labelpad=10)
+        
+        ax3 = ax.twiny()
+        ax3.set_xlim(0, nspec)
+        ax3.set_xlabel('Spectrum', labelpad=10)
 
+        plt.show();
 
+    return Image
