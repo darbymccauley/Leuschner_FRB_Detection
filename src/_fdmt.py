@@ -471,10 +471,10 @@ def FDMTFFT_iteration(Input,maxDT,F,f_min,f_max,iteration_num,dataType,Verbose =
     PDB("deltaT = ",deltaT)
     PDB("N_f = ",F/2.**(iteration_num))
     
-    output_dims[1] = output_dims[1]/2;
+    output_dims[0] = output_dims[0]/2;
     
     
-    output_dims[2] = deltaT + 1;
+    output_dims[1] = deltaT + 1;
     Output = np.zeros(output_dims,dataType);
     
     # No negative K's are calculated => no shift is needed
@@ -482,8 +482,8 @@ def FDMTFFT_iteration(Input,maxDT,F,f_min,f_max,iteration_num,dataType,Verbose =
     # 1+deltaTOld
     ShiftOutput = 0
     ShiftInput = 0
-    T = output_dims[0]
-    F_jumps = output_dims[1]
+    T = output_dims[2]
+    F_jumps = output_dims[0]
     
     # see remark about this correction in the FDMT implementation.
     correction = dF/2.    
@@ -509,7 +509,7 @@ def FDMTFFT_iteration(Input,maxDT,F,f_min,f_max,iteration_num,dataType,Verbose =
     
     return Output
 
-def CoherentDedispersion(raw_signal,d, f_min, f_max, alreadyFFTed = False):
+def CoherentDedispersion(raw_signal, d, f_min, f_max, alreadyFFTed = False):
     """
     Will perform coherent dedispersion.
     raw signal   - is assumed to be a one domensional signal

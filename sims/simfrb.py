@@ -34,14 +34,14 @@ def make_frb(nspec=1024, nchans=2048, DM=332.72, pulse_width=2.12, f_min=1150, f
         - offset [ms]: offset the pulse start time
         - plot (bool): plot output results
     Returns:
-        - Power matrix of shape (nspec, nchans)
+        - Power matrix of shape (nchans, nspec)
     """
     shape = (nchans, nspec)
     freqs = np.linspace(f_min, f_max, nchans)
     t_min = 0
     t_max = t_samp*nspec
 
-    signal_power = 0.3
+    signal_power = 0.5
     
     td0 = DM_delay(DM, f_max)
     tds = DM_delay(DM, freqs) - td0 + offset
