@@ -43,24 +43,32 @@ def make_frb(nspec=1024, nchans=2048, DM=332.72, pulse_width=2.12, f_min=1150, f
 
     signal_power = 0.5
     
-    td0 = DM_delay(DM, f_max)
-    tds = DM_delay(DM, freqs) - td0 + offset
-    bins = tds/t_samp
-    rounded_bins = np.round(bins).astype(int)
+    # td0 = DM_delay(DM, f_max)
+    # tds = DM_delay(DM, freqs) - td0 + offset
+    # bins = tds/t_samp
+    delays = DM_delay(DM, freqs) + offset
+    delay_bins = delays/t_samp
+    rounded_bins = np.round(delay_bins).astype(int)
+
+    pulse_bin_width = np.round(pulse_width/t_samp).astype(int)
 
     Image = np.random.normal(size=shape, loc=1, scale=0.2) # XXX
 
     FWHM_frac = 2*np.sqrt(2*np.log(2))
     sigma = pulse_width/FWHM_frac
-    gauss_window = signal.windows.gaussian(11, sigma/t_samp)
-    
+    window_len = 11
+    gauss_window = signal.windows.gaussian(window_len, sigma/t_samp)
+
     for i in range(len(Image)):
-        index = rounded_bins[i]
-        if index >= nspec-5:
-            continue
-        if index <= 5:
-            continue
-        Image[i, index-5:index+6] += signal_power*gauss_window
+        if rounded_bins[i] > nspec:
+            continue # so the tail of the pulse doesn't loop back around
+        Image[i] = np.roll(Image[i], rounded_bins[i]) # shift by DM delay to produce dispersion curve
+        Image[i, rounded_bins[i]:rounded_bins[i]+pulse_bin_width] += signal_power # give power to curve
+        
+    # for spec in range(nspec):
+
+
+
     
     if plot:
         fig, ax = plt.subplots(constrained_layout=True)
