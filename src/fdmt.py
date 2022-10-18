@@ -3,9 +3,11 @@ import matplotlib.pyplot as plt
 # import time
 # import sys
 
-
+# Constants of utility
 DispersionConstant = 4.148808e6 
 
+
+################################################################################################################################################
 
 def FDMT(Image, f_min, f_max, maxDT, dataType):
     N_f, N_t = Image.shape
@@ -94,6 +96,99 @@ def FDMT_iteration(Input, f_min, f_max, maxDT, dataType, N_f, iteration_num):
             Output[i_F, i_dT+ShiftOutput, i_T_min:i_T_max] = Input[2*i_F, dT_middle_index, i_T_min:i_T_max] + Input[2*i_F+1, dT_rest_index, i_T_min-dT_middle_larger:i_T_max-dT_middle_larger]
     
     return Output
+
+
+##############################################################################################################################################################
+
+def FDMTFFT(Image, f_min, f_max, maxDT, dataType):
+    """ dataType either complex64 or complex 128 """
+
+    N_f, N_t = Image.shape
+    niters = int(np.log2(N_f))
+    if (N_f not in [2**i for i in range(1, 30)]) or (N_t not in [2**i for i in range(1, 30)]) :
+        raise NotImplementedError("Input dimensions must be a power of 2")
+
+    # x = time.time()
+    State = FDMTFFT_initialization(Image, f_min, f_max, maxDT, dataType)
+    # PDB('initialization ended')
+    
+    for i in range(1, niters+1):
+        State = FDMTFFT_iteration(State, f_min, f_max, maxDT, dataType, N_f, i)
+    [T, F, dT] = State.shape
+    State = np.transpose(State, axes=[1, 2, 0])
+    DMT = np.reshape(np.fft.ifft(State, axis=2), [dT, T])
+    return DMT   
+
+def FDMTFFT_initialization(Image, f_min, f_max, maxDT, dataType):
+    [N_f, N_t] = Image.shape
+
+    delta_f = (f_max - f_min)/N_f
+    # determining the maximal deltaT that we will encounter in the first iteration.
+    # if deltaT is too large, consider binning
+    N_D = maxDT-1
+    delta_t = int( np.ceil( N_D * ((f_min**-2 - (f_min+delta_f)**-2) / (f_min**-2 - f_max**-2)) ) )
+
+    Output = np.zeros([N_f, delta_t+1, N_t], dataType)
+    
+    # Initializing the "A_f^{f + \delta f} (t_0,\Delta t)" array
+    Output[:, 0, :] = Image    
+    for i_dt in range(1, delta_t+1):
+        Output[:, i_dt, i_dt:] = Output[:, i_dt-1, i_dt:] + Image[:, :-i_dt]
+    
+    # FFT-ing the time axis and transposing the data
+    return np.transpose(np.fft.fft(Output, axis=2), axes=[2, 0, 1])
+
+def FDMTFFT_iteration(Input, f_min, f_max, maxDT, dataType, N_f, iteration_num):
+    input_dims = Input.shape
+    output_dims = list(input_dims)
+
+    delta_f = (f_max - f_min)/N_f
+    delta_F = 2**(iteration_num) * delta_f
+    # the maximum deltaT needed to calculate at the i'th iteration
+    N_D = maxDT-1
+    delta_t = int( np.ceil( N_D * ((f_min**-2 - (f_min+delta_F)**-2) / (f_min**-2 - f_max**-2)) ) )
+    
+    output_dims[0] = output_dims[0]//2
+    output_dims[1] = delta_t + 1
+
+    Output = np.zeros(output_dims, dataType);
+    
+    # No negative K's are calculated => no shift is needed
+    # If you want negative shifts, this will have to change to 1+deltaT,
+    # 1+deltaTOld
+    ShiftOutput = 0
+    ShiftInput = 0
+    T = output_dims[2]
+
+    F_jumps = output_dims[0]
+    
+    # see remark about this correction in the FDMT implementation.
+    correction = delta_f/2    
+    
+    deltaTShift = np.ceil(N_D * (f_min**-2 - (f_min + delta_F/2 + delta_f/2)**-2) / (f_min**-2 - f_max**-2)) + 3
+    ShiftRow = (np.fft.fft((np.eye(deltaTShift, T)), axis=1))
+    for i_F in range(F_jumps):
+        f_start = (f_max - f_min)/F_jumps * (i_F) + f_min
+        f_end = (f_max - f_min)/F_jumps *(i_F+1) + f_min
+        f_middle = (f_end - f_start)/2 + f_start - correction
+        # correction was removed. see the explanation in FDMT code.
+        f_middle_larger = (f_end - f_start)/2 + f_start + correction
+        deltaTLocal = int(np.ceil(N_D *(f_start**-2 - f_end**-2) / (f_min**-2 - f_max**-2)))
+        for i_dT in range(deltaTLocal+1):
+            dT_middle = int( round(i_dT * (f_middle**-2 - f_start**-2)/(f_end**-2 - f_start**-2)) )
+            dT_middle_index = dT_middle + ShiftInput
+            dT_middle_larger = int( round(i_dT * (f_middle_larger**-2 - f_start**-2)/(f_end**-2 - f_start**-2)) )
+            
+            dT_rest = i_dT - dT_middle_larger
+            dT_rest_index = dT_rest + ShiftInput
+            
+            Output[:, i_F, i_dT+ShiftOutput] = Input[:, 2*i_F, dT_middle_index] + Input[:, 2*i_F+1, dT_rest_index] * ShiftRow[dT_middle_larger, :]
+    
+    return Output
+
+
+##############################################################################################################################################################
+
 
 def compute_DM(DMT, f_min, f_max, t_samp):
     dmt_max_index = np.argmax(DMT)
