@@ -50,8 +50,8 @@ gpio_pins_100kHz = [12, 11, 10, 9]
 gpio_pins_10kHz = [8, 7, 6, 5]
 gpio_pins_1kHz = [4, 3, 2, 1]
 gpio_pins_100Hz = [0]
-gpio_pins_10kHz = []
-gpio_pins_1kHz = []
+gpio_pins_10Hz = []
+gpio_pins_1Hz = []
 
 gpio_pins = [gpio_pins_1GHz, 
              gpio_pins_100MHz, gpio_pins_10MHz, gpio_pins_1MHz, 
