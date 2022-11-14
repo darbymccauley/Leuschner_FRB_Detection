@@ -2,6 +2,11 @@ import RPi.GPIO as GPIO
 from time import sleep
 import numpy as np
 
+### HOW TO CHANGE THE GPIO DRIVER STRENGTH: ###
+# Initialize comms: sudo pigpiod
+# Read/Get driver strength from Pad 0 (GPIOs 0-27): pigs padg 0
+# Set driver strength of Pad 0 to X mA: pigs pads 0 X
+
 
 # binary_numbers[0] --> GHz
 # binary_numbers[1] --> 100 MHz
@@ -13,6 +18,7 @@ import numpy as np
 # binary_numbers[7] --> 100 Hz
 
 
+### FORMAT OF PTS/GPIO PINS: ###
 # 2^3  2^2  2^1  2^0
 #  8    4    2    1
 
@@ -108,7 +114,7 @@ def initialize_gpio():
     GPIO.setwarnings(False)
     # set all 0-25 GPIO as output pins
     GPIO.setup([i for i in range(0, 26)], GPIO.OUT)
-    # set up remote control
+    # set up remote control to PTS3200
     GPIO.setup(gpio_pins_remote, GPIO.OUT)
     GPIO.output(gpio_pins_remote, GPIO.HIGH)
 
