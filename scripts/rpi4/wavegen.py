@@ -1,7 +1,7 @@
 import RPi.GPIO as GPIO
 import numpy as np
 
-
+#
 ### HOW TO CHANGE THE GPIO DRIVER STRENGTH: ###
 # Initialize comms: sudo pigpiod
 # Read/Get driver strength from Pad 0 (GPIOs 0-27): pigs padg 0
