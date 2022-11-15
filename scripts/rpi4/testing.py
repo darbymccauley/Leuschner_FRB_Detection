@@ -8,21 +8,21 @@ import RPi.GPIO as GPIO
 gpio_pin = 25
 
 # Count to N
-N = 10000
+N = 2400
 
 # Initialize use of GPIOs
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
-GPIO.setup(gpio_pins, GPIO.OUT) # set the pin to be an output
+GPIO.setup(gpio_pin, GPIO.OUT) # set the pin to be an output
 
 while True:
-    GPIO.output(gpio_pin, GPIO.LOW)
-    print('Changed low')
+    GPIO.output(gpio_pin, GPIO.HIGH)
+    # print('Changed low')
     cnt = 0
     for n in range(N):
         cnt += 1
-    GPIO.output(gpio_pin, GPIO.HIGH)
-    print('Changed high')
+    GPIO.output(gpio_pin, GPIO.LOW)
+    # print('Changed high')
     cnt = 0
     for n in range(N):
         cnt += 1

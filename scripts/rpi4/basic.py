@@ -1,5 +1,4 @@
 import RPi.GPIO as GPIO
-from time import sleep
 import numpy as np
 
 ### HOW TO CHANGE THE GPIO DRIVER STRENGTH: ###
@@ -22,7 +21,7 @@ import numpy as np
 # 2^3  2^2  2^1  2^0
 #  8    4    2    1
 
-pts_pins_1GHz = [43]
+pts_pins_1GHz = [44, 43]
 pts_pins_100MHz = [41, 40, 16, 15]
 pts_pins_10MHz = [20, 19, 18, 17]
 pts_pins_1MHz = [27, 26, 2, 1]
@@ -42,7 +41,7 @@ pts_pins_LE = [23, 24, 25, 26]
 pts_pins_remote = [42]
 
 
-gpio_pins_1GHz = [25]
+gpio_pins_1GHz = [26, 25]
 gpio_pins_100MHz = [24, 23, 22, 21]
 gpio_pins_10MHz = [20, 19, 18, 17]
 gpio_pins_1MHz = [16, 15, 14, 13]
@@ -60,21 +59,23 @@ gpio_pins = [gpio_pins_1GHz,
 
 gpio_pins_LE = [26]
 gpio_pins_remote = [27]
+# LATCH ENABLE AND REMOTE ARE NOT NEEDED ANYMORE -- HARDCODED 
 
 
 
 def convert_to_bins(frequency):
     """ Frequency in Hz. Int input (no floats) """
-    if frequency > 1999999800 or frequency < 0: # upper and lower frequency bounds 
-        raise ValueError('Input frequency is outside of bounds: 0Hz to 1,999,999,800Hz')
+    if frequency > 3199999999 or frequency < 0: # upper and lower frequency bounds 
+        raise ValueError('Input frequency is outside of bounds: 0Hz to 3,199,999,999Hz')
+    # VALUE ERROR / TRUNCATE / ROUND FOR FRACTIONS
     frequency = str(frequency).zfill(10)
     freq = [int(n) for n in frequency]
-    if freq[-1] != 0 or freq[-2] != 0: # frequency resolution
-        raise ValueError('Finest frequency resolution is 800Hz.')
+    # if freq[-1] != 0 or freq[-2] != 0: # frequency resolution
+    #     raise ValueError('Finest frequency resolution is 800Hz.')
     binary_numbers = []
     for i, n in enumerate(freq):
-        if i == 0 or i == 7:
-            w = 1
+        if i == 0: # MAKE SURE INVERSION ISNT A PROBLEM
+            w = 2
         else:
             w = 4
         bin_num = np.binary_repr(n, width=w)
@@ -82,7 +83,7 @@ def convert_to_bins(frequency):
     return binary_numbers
 
 
-def toggle_gpios(binary_numbers):
+def shift_in_new_freq(binary_numbers):
     # A GPIO pin designated as an output pin can be set to HIGH (3.3V) 
     # or LOW (0V). A GPIO pin that is designated as an input will allow
     # a signal to be received by the RPi. The threshold between a high 
@@ -94,20 +95,53 @@ def toggle_gpios(binary_numbers):
     for num in binary_numbers:
         split = [int(n) for n in num]
         split_binary_numbers.append(split)
-        
-    for i in range(0, 8):
-        for j in range(len(split_binary_numbers[i])):
-            if split_binary_numbers[i][j] == 0:
-                print('DISabling GPIO pin', gpio_pins[i][j])
-                GPIO.output(gpio_pins[i][j], GPIO.LOW)
-            elif split_binary_numbers[i][j] == 1:
-                print('ENabling GPIO pin', gpio_pins[i][j])
-                GPIO.output(gpio_pins[i][j], GPIO.HIGH)
     
+    GPIO.output(gpio_sclk_pin, GPIO.HIGH) # set serial clk to off state
+    GPIO.output(gpio_pclk_pin, GPIO.HIGH) # set parallel clk to off state -- NEW VARIABLE GPIO 24
+    
+    bit_cnt = 0
+    for i in range(10, 0):
+        for j in range(len(split_binary_numbers[i]), 0): # XXX
+            if split_binary_numbers[i][j] == 0:
+                print('Shifting in a 0 at', bit_cnt) #, gpio_pins[i][j])
+                GPIO.output(gpio_data_pin, GPIO.LOW) # NEW VARIABLE GPIO 23
+            elif split_binary_numbers[i][j] == 1:
+                print('Shifting in a 1 at', bit_cnt) #, gpio_pins[i][j])
+                GPIO.output(gpio_data_pin, GPIO.HIGH)
+            
+            # User interaction for bit by bit input for debugging and probing
+            GPIO.output(gpio_sclk_pin, GPIO.LOW) # NEW VARIABLE GPIO 22
+            GPIO.output(gpio_sclk_pin, GPIO.HIGH) 
+           
+            bit_cnt += 1 
+
+
+def activate_freq():
+    # User interaction so we have control over change
+    GPIO.output(gpio_pclk_pin, GPIO.LOW) # MAGIC: triggers send to PTS
+    GPIO.output(gpio_pclk_pin, GPIO.HIGH) # return parallel clk to off (safe) state
+
+
+
+
 def continous_wave(freq):
     binary_list = convert_to_bins(freq)
-    toggle_gpios(binary_list)
+    shift_in_new_freq(binary_list)
+    activate_freq()
 
+
+def dummy_routine():
+    freq1 = 1400000000
+    freq2 =  985623274 
+    cnt1 = 0 
+    cnt2 = 0
+    while True:
+        continuous_wave(freq1)
+        for n in range(2400): # wait about 1 ms
+            cnt1 += 1
+        continuous_wave(freq2) # wait about 1 ms
+        for n in range(2400):
+            cnt2 += 1
 
 def initialize_gpio():
     GPIO.setmode(GPIO.BCM) # uses GPIO numbers, rather than rpi pin numbers
