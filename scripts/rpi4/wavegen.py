@@ -1,7 +1,16 @@
 import RPi.GPIO as GPIO
 import numpy as np
 
-#
+### IMPORT RFI NOTE ###
+# XXX When "blanked" -- tone for PTS3200 at 1.9604 GHz at -48dBm, with floor at -58 dBm
+#                                       DC to 160 MHz at -48 dBm
+
+### UB' QUESTIONABLE -- switched it out with another piece from another board (RESOLVED)
+### Rising edges (RESOLVED)
+### cable length from rpi to board needs adjusting
+### board supports 40-bits but we only gave 38, causing a weird 2 bit shift (RESOLVED)
+
+
 ### HOW TO CHANGE THE GPIO DRIVER STRENGTH: ###
 # Initialize comms: sudo pigpiod
 # Read/Get driver strength from Pad 0 (GPIOs 0-27): pigs padg 0
@@ -60,12 +69,14 @@ gpio_pclk_pin = 24 # parallel clock pin
 gpio_pins = [gpio_data_pin, gpio_sclk_pin, gpio_pclk_pin] # all GPIOs
 
 
-def convert_to_bins(frequency):
+def convert_to_bins(frequency, model='PTS3200'):
     """
     Convert a given input into its binary counterpart.
 
     Inputs:
-        - frequency (int)|[Hz] - Input frequency
+        - frequency (int)|[Hz]: Input frequency
+        - model (str): PTS model used. Default is PTS3200.
+          Accepts PTS3200, PTS500, PTS300.
     Returns:
         - A list of len 10 (for 10 decimal places from Hz to GHz),
           with each element in the list containing a binary nibble,
@@ -73,17 +84,22 @@ def convert_to_bins(frequency):
           half-nibble (in accordance with PTS3200 frequency limits).
     """
     frequency = int(np.round(frequency)) # fractions not allowed -- round and make an integer value
-    if frequency > 3199999999 or frequency < 0: # upper and lower frequency bounds 
-        raise ValueError('Input frequency is outside of bounds: 0Hz to 3,199,999,999Hz')
+    if model == 'PTS3200':
+        max_freq = 3199999999
+        min_freq = 0
+    elif model == 'PTS500': 
+        max_freq = 500000000
+        min_freq = 0
+    else: # assume PTS300
+        max_freq = 300000000
+        min_freq = 0
+    if frequency > max_freq or frequency < min_freq: # upper and lower frequency bounds 
+        raise ValueError('Input frequency is outside of bounds') # XXX add bounds+model to this print statement
     frequency = str(frequency).zfill(10)
     freq = [int(n) for n in frequency]
     binary_numbers = []
     for i, n in enumerate(freq):
-        if i == 0: # XXX MAKE SURE INVERSION ISNT A PROBLEM
-            w = 2 # PTS only has two signigicant bits for GHz
-        else:
-            w = 4
-        bin_num = np.binary_repr(n, width=w)
+        bin_num = np.binary_repr(n, width=4)
         binary_numbers.append(bin_num)
     return binary_numbers
 
@@ -113,10 +129,13 @@ def shift_in_new_freq(binary_numbers):
                 print('Shifting in a 1 at', bit_cnt)
                 GPIO.output(gpio_data_pin, GPIO.HIGH)
             # XXX User interaction for bit by bit input for debugging and probing
-            GPIO.output(gpio_sclk_pin, GPIO.LOW)
-            GPIO.output(gpio_sclk_pin, GPIO.HIGH) # XXX needed??
-            bit_cnt += 1 
+            usleep(2) # let the data settle before pulsing clk
 
+            GPIO.output(gpio_sclk_pin, GPIO.LOW)
+            usleep(2) # stretch out clk pulse to be conservative
+            GPIO.output(gpio_sclk_pin, GPIO.HIGH) 
+            bit_cnt += 1
+    
 
 def send_command():
     """
@@ -127,7 +146,7 @@ def send_command():
     GPIO.output(gpio_pclk_pin, GPIO.HIGH) # return parallel clock to off state
 
 
-def continous_wave(freq):
+def continuous_wave(freq):
     """
     Generates a continuous wave of a specified frequency.
     
@@ -136,6 +155,7 @@ def continous_wave(freq):
     """
     binary_list = convert_to_bins(freq) # convert freq from decimal to binary
     shift_in_new_freq(binary_list) # load data to GPIO
+    usleep(2) # conservative wait after data as been serially shifted before doing parallel load
     send_command() # send data to PTS
 
 
@@ -149,11 +169,10 @@ def dummy_routine():
     cnt2 = 0
     while True:
         continuous_wave(freq1)
-        for n in range(2400): # wait about 1 ms
-            cnt1 += 1
-        continuous_wave(freq2) # wait about 1 ms
-        for n in range(2400):
-            cnt2 += 1
+        usleep(1000) # wait 1ms
+        continuous_wave(freq2) 
+        usleep(1000) # wait 1ms
+
 
 def initialize_gpio():
     """
@@ -163,6 +182,11 @@ def initialize_gpio():
     GPIO.setwarnings(False) # ingore internal messaging
     # define GPIO pins as outputs
     GPIO.setup(gpio_pins, GPIO.OUT)
+    # set initial level of GPIO pins
+    GPIO.output(gpio_data_pin, GPIO.LOW)
+    GPIO.output(gpio_sclk_pin, GPIO.HIGH)
+    GPIO.output(gpio_pclk_pin, GPIO.HIGH)
+
 
 def cleanup_gpio():
     """
@@ -176,13 +200,24 @@ def usleep(time):
     Sleep for a given number of microseconds.
     WARNING: Needs to be calibrated according to used hardware.
         (Current rough estimate for RPi4: 2400 cnts = 1 ms)
+
     Inputs:
         - time [microseconds]: time of delay
     """
     # Convert time to count number, N
     const = 2400/1e3
-    N = const*time
-
+    N = int(np.round(const*time))
     cnt = 0
     for i in range(N):
         cnt += 1
+
+
+def blank():
+    N = 50
+    GPIO.output(gpio_sclk_pin, GPIO.HIGH) # set off
+    for j in range(2):
+        for i in range(N):
+            GPIO.output(gpio_sclk_pin, GPIO.LOW)
+            GPIO.output(gpio_sclk_pin, GPIO.HIGH)
+        send_command()
+    
