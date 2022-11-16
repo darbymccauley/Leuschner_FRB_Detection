@@ -169,3 +169,20 @@ def cleanup_gpio():
     Cleanup GPIOs to ensure no damage is done to RPi.
     """
     GPIO.cleanup()
+
+
+def usleep(time):
+    """
+    Sleep for a given number of microseconds.
+    WARNING: Needs to be calibrated according to used hardware.
+        (Current rough estimate for RPi4: 2400 cnts = 1 ms)
+    Inputs:
+        - time [microseconds]: time of delay
+    """
+    # Convert time to count number, N
+    const = 2400/1e3
+    N = const*time
+
+    cnt = 0
+    for i in range(N):
+        cnt += 1
