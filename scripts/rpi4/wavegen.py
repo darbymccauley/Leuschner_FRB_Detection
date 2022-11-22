@@ -181,6 +181,7 @@ class WaveGen():
             - f_max (float)|[Hz]: maximum frequency of sweep
             - nchans (int): number of frequency channels
             - dt (float)|[us]: time until next frequncy change
+            - continuous (bool): single or repeating sweep?
         """
         freqs = np.linspace(f_min, f_max, nchans)
         while continuous:
@@ -207,27 +208,35 @@ class WaveGen():
         return A/((freq/1e6)**2)
 
 
-    def dm_sweep(self, f_min=1150e6, f_max=1650e6, nchans=2048, DM=332.72):
+    def dm_sweep(self, DM=332.72, f_min=1150e6, f_max=1650e6, dt=1000, continuous=False):
         """
         Generates a frequency sweep that mirrors that caused
         by dispersion measure influence.
 
         Inputs:
-            - f_min (float)|[Hz]: minimum frequency of sweep
-            - f_max (float)|[Hz]: maximum frequency of sweep
-            - nchans (int): number of frequency channels
             - DM (float)|[pc*cm^-3]: dispersion measure (default 
               is DM for SGR1935+2154)
+            - f_min (float)|[Hz]: minimum frequency of sweep
+            - f_max (float)|[Hz]: maximum frequency of sweep
+            - dt (float)|[us]: sweep update interval
+            - continuous (bool): single or repeating sweep?
         """
-        freqs = np.linspace(f_min, f_max, nchans)
-        delta_t = self._dm_delay(DM, freqs)
-        min_delay = min(delta_t)
-        for i in range(len(delta_t)):
-            if i+1 < len(delta_t):
-                self.continuous_wave(freqs[i])
-                self._usleep(delta_t[i] - delta_t[i+1])
-            else:
-                continue
+        const = 4140e6
+        A = const*DM
+        t0 = self._dm_delay(DM, f_max)
+        tf = self._dm_delay(DM, f_min)
+        ts = np.arange(t0, tf+dt, dt)
+        freqs = np.sqrt(A/ts)*1e6 # 1e6 for proper conversion of freqs into Hz
+        while continuous:
+            for f in freqs:
+                self.continuous_wave(f)
+                self._usleep(dt)
+        for f in freqs:
+            self.continuous_wave(f)
+            self._usleep(dt)
+
+        
+
 
 
 
