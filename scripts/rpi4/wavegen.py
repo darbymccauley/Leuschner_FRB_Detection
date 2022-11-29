@@ -54,15 +54,13 @@ class WaveGen():
               This corresponds to a 40-bit total. The nibbles read from
               most to least significant bit.
         """
+        min_freq = 1e6
         if self.model == 'PTS3200':
             max_freq = 3199999999
-            min_freq = 0
         elif self.model == 'PTS500': 
-            max_freq = 500000000
-            min_freq = 0
+            max_freq = 500e6
         else: # assume PTS300
-            max_freq = 300000000
-            min_freq = 0
+            max_freq = 300e6
         rounded_frequency = int(np.round(frequency)) # fractions not allowed
         if rounded_frequency > max_freq or rounded_frequency < min_freq: # upper and lower frequency bounds 
             print('WARNING: Input frequency {0} is out of range for model {1} ({2} - {3} Hz).'.format(frequency, model, max_freq, min_freq))
@@ -116,7 +114,7 @@ class WaveGen():
         """
         Triggers send of frequency from RPi to PTS.
         """
-        # User interaction so we have control over change -- Verbose commands
+        # User interaction so we have control over change -- Verbose commands XXX
         GPIO.output(self.gpio_pclk_pin, GPIO.LOW) # triggers send to PTS
         GPIO.output(self.gpio_pclk_pin, GPIO.HIGH) # return parallel clock to off state
 
@@ -128,9 +126,37 @@ class WaveGen():
         Inputs:
             - freq (int)|[Hz]: Desired frequency
         """
-        binary_list = self._convert_to_bins(freq) # convert freq from decimal to binary
-        self._load_frequency(binary_list) # load data to GPIO
-        self._usleep(2) # conservative wait after data as been serially shifted before doing parallel load
+        self._make_wave(freq, decimal=True)
+
+
+    def _convert_freq_list(self, freqs, model='PTS3200'):
+        """
+        Convert an entire list of frequencies into binary
+        in preparation for sweep functions.
+
+        Inputs:
+            - freqs [Hz]: list of frequencies
+            - model (str): PTS model used. Default is PTS3200.
+              Accepts PTS3200, PTS500, PTS300.
+        """
+        bin_freqs = self._convert_to_bins(freqs, model)
+        return bin_freqs
+
+
+    def _make_wave(self, freq, decimal=False):
+        """
+        Load and generate a wave at the specified frequency.
+
+        Inputs:
+            - freq [Hz]: Desired frequency
+            - decimal (bool): is input freq given in decimal 
+              or binary form?
+        """
+        if decimal: # if frequency is given in decimal form:
+            binary_list = self._convert_to_bins(freq) # convert freq from decimal to binary
+        binary_list = freq # already in binary form
+        self._load_frequency(binary_list) # load binary data to GPIO
+        self._usleep(2) # conservative wait after data has been serially shifted before doing parallel load
         self._send_command() # send data to PTS
 
 
@@ -145,7 +171,7 @@ class WaveGen():
         """
         Sleep for a given number of microseconds.
         WARNING: Needs to be calibrated according to used hardware.
-        (Current rough estimate for RPi4 + PTS3200: 2400 cnts = 1 ms)
+        (Current estimate for RPi4 + PTS3200: 2400 cnts = 1 ms)
 
         Inputs:
             - time [us]: time of delay
@@ -160,7 +186,7 @@ class WaveGen():
 
     def blank(self):
         """
-        Clear signal, reset to 0 Hz, and reset clocks.
+        Clear signal and reset clocks.
         """
         N = 50
         GPIO.output(self.gpio_sclk_pin, GPIO.HIGH) # set off
@@ -172,7 +198,7 @@ class WaveGen():
        
 
 
-    def linear_sweep(self, f_min=1150e6, f_max=1650e6, nchans= 2048, dt=1000, continuous=False):
+    def linear_sweep(self, f_min=1150e6, f_max=1650e6, nchans= 2048, dt=1000, model='PTS3200', continuous=False):
         """
         Generate a continuous linear (simple) sweep.
 
@@ -184,12 +210,13 @@ class WaveGen():
             - continuous (bool): single or repeating sweep?
         """
         freqs = np.linspace(f_min, f_max, nchans)
+        bin_freqs = self._convert_freq_list(freqs, model)
         while continuous:
-            for f in freqs:
-                self.continuous_wave(f)
+            for f in bin_freqs:
+                self._make_wave(f)
                 self._usleep(dt)
-        for f in freqs:
-            self.continuous_wave(f)
+        for f in bin_freqs:
+            self._make_wave(f)
             self._usleep(dt)
 
 
@@ -208,7 +235,7 @@ class WaveGen():
         return A/((freq/1e6)**2)
 
 
-    def dm_sweep(self, DM=332.72, f_min=1150e6, f_max=1650e6, dt=1000, continuous=False):
+    def dm_sweep(self, DM=332.72, f_min=1150e6, f_max=1650e6, dt=1000, model='PTS3200', continuous=False):
         """
         Generates a frequency sweep that mirrors that caused
         by dispersion measure influence.
@@ -219,6 +246,8 @@ class WaveGen():
             - f_min (float)|[Hz]: minimum frequency of sweep
             - f_max (float)|[Hz]: maximum frequency of sweep
             - dt (float)|[us]: sweep update interval
+            - model (str): PTS model used. Default is PTS3200.
+              Accepts PTS3200, PTS500, PTS300.
             - continuous (bool): single or repeating sweep?
         """
         const = 4140e6
@@ -227,12 +256,13 @@ class WaveGen():
         tf = self._dm_delay(DM, f_min)
         ts = np.arange(t0, tf+dt, dt)
         freqs = np.sqrt(A/ts)*1e6 # 1e6 for proper conversion of freqs into Hz
+        bin_freqs = self._convert_freq_list(freqs, model) # convert frequencies into binary form
         while continuous:
-            for f in freqs:
-                self.continuous_wave(f)
+            for f in bin_freqs:
+                self._make_wave(f)
                 self._usleep(dt)
-        for f in freqs:
-            self.continuous_wave(f)
+        for f in bin_freqs:
+            self._make_wave(f)
             self._usleep(dt)
 
         
