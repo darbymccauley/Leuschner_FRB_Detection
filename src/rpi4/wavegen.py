@@ -303,7 +303,10 @@ class WaveGen():
         self.continuous_wave(self.no_signal) # go back to "no signal" signal
         # XXX Add saving ability
 
-    # def reset_gpios(self):
+    #def reset_gpios(self):
+    #    self.cleanup_gpio()
+    #    self.__init__()
+
 
 
 
