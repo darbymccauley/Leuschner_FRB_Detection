@@ -9,8 +9,8 @@ import os
 # Set driver strength of Pad 0 to X mA: pigs pads 0 X
 
 # Set GPIO driver strength 
-os.system('sudo pigpiod') 
-os.system('pigs pads 0 4') # set driver strength of Pad 0 (GPIOs 0-27) to 4 mA
+# os.system('sudo pigpiod') 
+# os.system('pigs pads 0 4') # set driver strength of Pad 0 (GPIOs 0-27) to 4 mA
 
 
 # GPIO pins
@@ -146,11 +146,11 @@ class WaveGen():
         in preparation for sweep functions.
 
         Inputs:
-            - freqs [Hz]: list of frequencies
+            - freqs [Hz]: list of frequencies (in decimal form)
             - model (str): PTS model used. Default is PTS3200.
               Accepts PTS3200, PTS500, PTS300.
         """
-        bin_freqs = self._convert_to_bins(freqs, model)
+        bin_freqs = [self._convert_to_bins(f, model) for f in freqs]
         return bin_freqs
 
 
@@ -165,7 +165,8 @@ class WaveGen():
         """
         if decimal: # if frequency is given in decimal form:
             binary_list = self._convert_to_bins(freq) # convert freq from decimal to binary
-        binary_list = freq # already in binary form
+        else:
+            binary_list = freq # already in binary form
         self._load_frequency(binary_list) # load binary data to GPIO
         self._usleep(2) # conservative wait after data has been serially shifted before doing parallel load
         self._send_command() # send data to PTS
@@ -301,6 +302,12 @@ class WaveGen():
         self.dm_sweep(DM, f_min, f_max, dt, model, continuous=False) # FRB sweep
         self.continuous_wave(self.no_signal) # go back to "no signal" signal
         # XXX Add saving ability
+
+    #def reset_gpios(self):
+    #    self.cleanup_gpio()
+    #    self.__init__()
+
+
 
 
 
