@@ -2,181 +2,132 @@
 # Computer generated FRB signal #
 #################################
 
-
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy import signal
-from tqdm import tqdm
 
+
+CONST = 4140e12 # s Hz^2 / (pc / cm^3)
 
 def DM_delay(DM, freq):
     """
     Computes the frequency-dependent dispersion measure
     time delay.
-
     Inputs:
         - DM [pc*cm^-3]: dispersion measure
-        - freq [MHz]: frequency
+        - freq [Hz]: frequency
     Returns:
-        - Pulse time delay in [ms] 
+        - Pulse time delay in [s] 
     """
-    const = 4140
-    A = DM*const*1e3 # 1e3 for conversion to ms
-    return A/(freq**2)
+    return np.float32(DM * CONST) / freq**2
 
-def make_frb(nspec=4096, nchans=4096, DM=332.72, pulse_width=2.12, f_min=1150, f_max=1650, t_samp=0.06128, SNR=2, plot=False):
+def make_frb(ntimes=4096, nfreqs=2048, f_min=1150e6, f_max=1650e6, DM=332.72, pulse_width=2.12e-3, pulse_amp=2, t0=2e-3,
+             dtype='float32', cdtype='complex64'):
     """
     Simulates a fast radio burst (FRB) observation given a 
     certain set of parameters.
     Inputs:
-        - nspec: number of spectra
-        - nchans: number of frequency channels
+        - ntimes (int): number of integration times
+        - freqs (int): number of spectral frequency channels
+        - f_min (float)|[Hz]: minimum frequency of band
+        - f_max (float)|[Hz]: maximum frequency of band
         - DM [pc*cm^-3]: dispersion measure
-        - pulse_width [ms]: width of FRB pulse
-        - f_min [MHz]: lower frequency of band
-        - f_max [MHz]: upper frequency of band
-        - t_samp [ms]: sampling time/time resolution
-        - offset [ms]: offset the pulse start time
-        - SNR: signal-to-noise level
-        - plot (bool): plot output results
+        - pulse_width [s]: width of FRB pulse
+        - pulse_amp: amplitude of FRB pulse
+        - t0 [s]: offset the pulse start time
     Returns:
-        - Power matrix of shape (nchans, nspec)
+        - Power matrix of shape (ntimes, nfreqs)
     """
-    shape = (nchans, nspec)
-    freqs = np.linspace(f_min, f_max, nchans)
-    t_min = 0
-    t_max = t_samp*nspec
-
+    times = np.linspace(0, 1, ntimes) # 1 second interval
+    freqs = np.linspace(f_min, f_max, nfreqs)
+    dt = times[1] - times[0]
+    tmid = times[times.size // 2]
     delays = DM_delay(DM, freqs)
-    delay_bins = delays/t_samp
-    rounded_bins = np.round(delay_bins).astype(int)
+    delays -= tmid + delays[-1] - t0  # center lowest delay at t0
 
-    pulse_bin_width = np.round(pulse_width/t_samp).astype(int)
-
-    noise_std = 0.2 # XXX
-    Image = np.random.normal(size=shape, loc=1, scale=noise_std)
-    noise_power = 1
-    signal_power = SNR*noise_power
-
-    FWHM_frac = 2*np.sqrt(2*np.log(2))
-    sigma = pulse_bin_width/FWHM_frac
-    window_len = pulse_bin_width
-    gauss_window = signal.windows.gaussian(window_len, sigma)
-
-    Image[:, :pulse_bin_width] += signal_power
-    for i in range(len(Image)):
-        if rounded_bins[i] > nspec:
-            continue # so the tail of the pusle doesn't loop back around
-        Image[i] = np.roll(Image[i], rounded_bins[i])
-        # Image[i, :] *= gauss_window 
-
-    if plot:
-        plot_frb(Image, t_min, t_max, f_min, f_max)
-        
-    return Image
+    # assume same inherent profile for all freqs
+    pulse = pulse_amp * np.exp(-(times - tmid)**2 / (2 * pulse_width**2))
+    _pulse = np.fft.rfft(pulse).astype(cdtype)
+    _ffreq = np.fft.rfftfreq(pulse.size, dt)
+    phs = np.exp(-2j * np.pi * np.outer(_ffreq.astype(dtype), delays.astype(dtype)))
+    _pulse_dly = np.einsum('i,ij->ij', _pulse, phs)
+    profile = np.fft.irfft(_pulse_dly, axis=0).astype(dtype)
+    profile += np.random.normal(size=profile.shape, loc=10) # add noise
+    profile[:,::137] = 0  # blank out rfi
+    profile[:,300:500] = 0  # blank out rfi
+#     profile[::519] = 100  # rfi
+    profile -= np.mean(profile, axis=0, keepdims=True)
+    return profile
 
 
-def plot_frb(Image, t_min, t_max, f_min, f_max):
-    """
-    Plot FRB data.
+##########################################################################################################################################
+# def collect_data(obs_time, file_path, nchans=4096, DM=332.72, pulse_width=2.12, f_min=1150, f_max=1650, t_samp=0.0612, SNR=2):
+#     """
+#     Collect simulated FRB data and chunk the spectra into
+#     saved datafiles.
+
+#     Inputs:
+#         - obs_time [s]: observation time in seconds
+#         - file_path (str): path to save collected files to
+#         - nchans (int): number of frequency channels
+#         - DM [pc*cm^-3]: dispersion measure
+#         - pulse_width [ms]: time width of FRB pulse
+#         - f_min [MHz]: lower frequency of band
+#         - f_max [MHz]: upper frequency of band
+#         - t_samp [ms]: sampling time/time resolution
+#         - SNR: signal-to-noise ratio
+#     Returns: A series of data files saved to specified file 
+#       path, each containing 1s worth of data.
+#     """
+#     obs_time_ms = obs_time*1e3 # convert s to ms
+#     nspec_1s = np.round(1e3/t_samp).astype(int) # number of spectra in 1 second 
+#     nspec_tot = np.round(obs_time_ms/t_samp).astype(int) # total number of spectra to be collected in observing time
+#     nblocks = np.round(nspec_tot/nspec_1s).astype(int)
+
+#     Image = make_frb(nspec=nspec_tot, nchans=nchans, DM=DM, pulse_width=pulse_width, f_min=f_min, f_max=f_max, t_samp=t_samp, SNR=SNR)
+
+#     spec0 = 0
+#     for block in range(1, nblocks+1):
+#         if block == np.max(nblocks)+1: # needed in case last number of spectra in last block is not equal to nspec_1s
+#             data_chunk = Image[:, spec0:]
+#             np.savetxt(file_path+'/block_'+str(block)+'.txt', data_chunk)
+#         data_chunk = Image[:, spec0:block*nspec_1s]
+#         np.savetxt(file_path+'/block_'+str(block)+'.txt', data_chunk)
+#         spec0 = block*nspec_1s
+
+
+# def half_block(Image):
+#     """
+#     Split data from data files into halves for
+#     use in later power analysis.
     
-    Inputs:
-        - Image: Power matrix of shape (nchans, nspec)
-        - t_min [ms]: start time
-        - t_max [ms]: end time
-        - f_min [MHz]: lower frequency of band
-        - f_max [MHz]: upper frequency of band
-    Returns: plot of Image with time and frequency main axes,
-      and channel and spectrum number minor axes.
-    """
-    nchans, nspec = Image.shape
-    fig, ax = plt.subplots(constrained_layout=True)
-    im = ax.imshow(Image, aspect='auto', origin='lower', extent=[t_min, t_max, f_min, f_max])
-
-    ax.set_xlabel('Time [ms]')
-    ax.set_ylabel('Frequency [MHz]')
-    ax.set_xlim(t_min, t_max)
-    ax.set_ylim(f_min, f_max)
-
-    ax2 = ax.twinx()
-    ax2.set_ylim(0, nchans)
-    ax2.set_ylabel('Channel', rotation=270, labelpad=10)
-    
-    ax3 = ax.twiny()
-    ax3.set_xlim(0, nspec)
-    ax3.set_xlabel('Spectrum', labelpad=10)
-
-    plt.show();
+#     Inputs:
+#         - Image: data from data file
+#     Returns: Two matrixes each 0.5s in time width.
+#     """
+#     # data = np.loadtxt(file)
+#     half_index = np.round(Image.shape[1]/2).astype(int)
+#     first_half, second_half = Image[:, :half_index], Image[:, half_index:]
+#     return first_half, second_half
 
 
-def collect_data(obs_time, file_path, nchans=4096, DM=332.72, pulse_width=2.12, f_min=1150, f_max=1650, t_samp=0.0612, SNR=2):
-    """
-    Collect simulated FRB data and chunk the spectra into
-    saved datafiles.
+# def find_pulse(data_file, minimum_sigma=2):
+#     """
+#     Look for pulses in the data files and save 
+#     interesting data to a singular file.
 
-    Inputs:
-        - obs_time [s]: observation time in seconds
-        - file_path (str): path to save collected files to
-        - nchans (int): number of frequency channels
-        - DM [pc*cm^-3]: dispersion measure
-        - pulse_width [ms]: time width of FRB pulse
-        - f_min [MHz]: lower frequency of band
-        - f_max [MHz]: upper frequency of band
-        - t_samp [ms]: sampling time/time resolution
-        - SNR: signal-to-noise ratio
-    Returns: A series of data files saved to specified file 
-      path, each containing 1s worth of data.
-    """
-    obs_time_ms = obs_time*1e3 # convert s to ms
-    nspec_1s = np.round(1e3/t_samp).astype(int) # number of spectra in 1 second 
-    nspec_tot = np.round(obs_time_ms/t_samp).astype(int) # total number of spectra to be collected in observing time
-    nblocks = np.round(nspec_tot/nspec_1s).astype(int)
-
-    Image = make_frb(nspec=nspec_tot, nchans=nchans, DM=DM, pulse_width=pulse_width, f_min=f_min, f_max=f_max, t_samp=t_samp, SNR=SNR)
-
-    spec0 = 0
-    for block in range(1, nblocks+1):
-        if block == np.max(nblocks)+1: # needed in case last number of spectra in last block is not equal to nspec_1s
-            data_chunk = Image[:, spec0:]
-            np.savetxt(file_path+'/block_'+str(block)+'.txt', data_chunk)
-        data_chunk = Image[:, spec0:block*nspec_1s]
-        np.savetxt(file_path+'/block_'+str(block)+'.txt', data_chunk)
-        spec0 = block*nspec_1s
-
-
-def half_block(Image):
-    """
-    Split data from data files into halves for
-    use in later power analysis.
-    
-    Inputs:
-        - Image: data from data file
-    Returns: Two matrixes each 0.5s in time width.
-    """
-    # data = np.loadtxt(file)
-    half_index = np.round(Image.shape[1]/2).astype(int)
-    first_half, second_half = Image[:, :half_index], Image[:, half_index:]
-    return first_half, second_half
-
-
-def find_pulse(data_file, minimum_sigma=2):
-    """
-    Look for pulses in the data files and save 
-    interesting data to a singular file.
-
-    Inputs: 
-        - data_file: data file containing power matrix
-        - minimum_sigma: Minimum average power signal 
-          that warrents a saving of data set
-    Returns: XXX
-    """
-    data = np.loadtxt(data_file)
-    first_half_data, second_half_data = half_block(data)
-    blocks = [['first half of '+data_file, first_half_data], ['second half of '+data_file, second_half_data]]
-    for name, half in blocks:
-        f = open(FILENAME, 'a') # append mode
-        if half.mean() > minimum_sigma:
-            print(f'FRB pulse found in {name}. Saving...')
+#     Inputs: 
+#         - data_file: data file containing power matrix
+#         - minimum_sigma: Minimum average power signal 
+#           that warrents a saving of data set
+#     Returns: XXX
+#     """
+#     data = np.loadtxt(data_file)
+#     first_half_data, second_half_data = half_block(data)
+#     blocks = [['first half of '+data_file, first_half_data], ['second half of '+data_file, second_half_data]]
+#     for name, half in blocks:
+#         f = open(FILENAME, 'a') # append mode
+#         if half.mean() > minimum_sigma:
+#             print(f'FRB pulse found in {name}. Saving...')
 
 
 
