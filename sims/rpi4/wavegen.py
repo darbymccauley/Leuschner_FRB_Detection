@@ -189,7 +189,7 @@ class WaveGen():
             - time [us]: time of delay
         """
         # Convert time to count number, N
-        const = 2400/1e3
+        const = 5714/1e3
         N = int(np.round(const*time))
         cnt = 0
         for i in range(N):
@@ -228,6 +228,7 @@ class WaveGen():
                 self._make_wave(f)
                 self._usleep(dt)
         for f in bin_freqs:
+            print('freq=',f)
             self._make_wave(f)
             self._usleep(dt)
 
