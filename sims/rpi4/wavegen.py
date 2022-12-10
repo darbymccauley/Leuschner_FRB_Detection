@@ -278,7 +278,7 @@ class WaveGen():
             self._usleep(dt)
 
 
-    def mock_obs(self, wait_time, DM=332.72, f_min=1150e6, f_max=1650e6, dt=1000, model='PTS3200'):
+    def mock_dm_obs(self, wait_time, DM=332.72, f_min=1150e6, f_max=1650e6, dt=1000, model='PTS3200'):
         """
         Simulate an FRB observation in collected time-dependent voltage data.
 
@@ -301,11 +301,15 @@ class WaveGen():
         self._usleep(wait_time_us)
         self.dm_sweep(DM, f_min, f_max, dt, model, continuous=False) # FRB sweep
         self.continuous_wave(self.no_signal) # go back to "no signal" signal
-        # XXX Add saving ability
+      
 
-    #def reset_gpios(self):
-    #    self.cleanup_gpio()
-    #    self.__init__()
+    def mock_linear_obs(self, wait_time, f_min=1150e6, f_max=1650e6, nchans=2048, dt=1000, model='PTS3200'):
+        wait_time_us = wait_time*1e6 # convert to microseconds
+        self.continuous_wave(self.no_signal)
+        self._usleep(wait_time_us)
+        self.linear_sweep(f_min, f_max, nchans, dt, model, continuous=False)
+        self.continuous_wave(self.no_signal)
+
 
 
 
