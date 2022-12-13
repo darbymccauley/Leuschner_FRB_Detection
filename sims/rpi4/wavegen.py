@@ -1,16 +1,6 @@
 import RPi.GPIO as GPIO
 import numpy as np
-import os
-
-
-### HOW TO CHANGE THE GPIO DRIVER STRENGTH: ###
-# Initialize comms: sudo pigpiod
-# Read/Get driver strength from Pad 0 (GPIOs 0-27): pigs padg 0
-# Set driver strength of Pad 0 to X mA: pigs pads 0 X
-
-# Set GPIO driver strength 
-# os.system('sudo pigpiod') 
-# os.system('pigs pads 0 4') # set driver strength of Pad 0 (GPIOs 0-27) to 4 mA
+import subprocess
 
 
 # GPIO pins
@@ -29,12 +19,17 @@ MODEL = 'PTS3200'
 # frequency will later be filtered out via a 250 MHz high-pass filter.
 NO_SIGNAL = 7.2e6 # Hz
 
+
 class WaveGen():
 
     def __init__(self, gpio_data_pin=GPIO_DATA_PIN, gpio_sclk_pin=GPIO_SCLK_PIN, gpio_pclk_pin=GPIO_PCLK_PIN, gpio_timer_pin=GPIO_TIMER_PIN, model=MODEL, no_signal=NO_SIGNAL):
         """
         Instantiate use of PTS and RPi GPIO pins.
         """
+        # Set drive strength 
+        strength = subprocess.call('./drive_strength.sh')
+        print('GPIO pin drive strength has been set:', strength, 'mA')
+
         self.model = model
         self.gpio_data_pin = gpio_data_pin
         self.gpio_sclk_pin = gpio_sclk_pin
