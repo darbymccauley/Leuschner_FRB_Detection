@@ -17,7 +17,8 @@ import os
 GPIO_DATA_PIN = 23 # data pin
 GPIO_SCLK_PIN = 22 # serial clock pin
 GPIO_PCLK_PIN = 24 # parallel clock pin
-# GPIO_PINS = [GPIO_DATA_PIN, GPIO_SCLK_PIN, GPIO_PCLK_PIN]
+GPIO_TIMER_PIN = 26 # pin used for usleep timer/clock
+# GPIO_PINS = [GPIO_DATA_PIN, GPIO_SCLK_PIN, GPIO_PCLK_PIN, GPIO_TIMER_PIN]
 
 # PTS model
 MODEL = 'PTS3200'
@@ -30,7 +31,7 @@ NO_SIGNAL = 7.2e6 # Hz
 
 class WaveGen():
 
-    def __init__(self, gpio_data_pin=GPIO_DATA_PIN, gpio_sclk_pin=GPIO_SCLK_PIN, gpio_pclk_pin=GPIO_PCLK_PIN, model=MODEL, no_signal=NO_SIGNAL):
+    def __init__(self, gpio_data_pin=GPIO_DATA_PIN, gpio_sclk_pin=GPIO_SCLK_PIN, gpio_pclk_pin=GPIO_PCLK_PIN, gpio_timer_pin=GPIO_TIMER_PIN, model=MODEL, no_signal=NO_SIGNAL):
         """
         Instantiate use of PTS and RPi GPIO pins.
         """
@@ -38,7 +39,8 @@ class WaveGen():
         self.gpio_data_pin = gpio_data_pin
         self.gpio_sclk_pin = gpio_sclk_pin
         self.gpio_pclk_pin = gpio_pclk_pin
-        self.gpio_pins = [self.gpio_data_pin, self.gpio_sclk_pin, self.gpio_pclk_pin]
+        self.gpio_timer_pin = gpio_timer_pin
+        self.gpio_pins = [self.gpio_data_pin, self.gpio_sclk_pin, self.gpio_pclk_pin, self.gpio_timer_pin]
         self.no_signal = no_signal
 
         GPIO.setwarnings(False) # ignore RPi.GPIO internal messaging
@@ -49,6 +51,7 @@ class WaveGen():
         GPIO.output(self.gpio_data_pin, GPIO.LOW)
         GPIO.output(self.gpio_sclk_pin, GPIO.HIGH)
         GPIO.output(self.gpio_pclk_pin, GPIO.HIGH)
+        GPIO.output(self.gpio_timer_pin, GPIO.HIGH)
 
 
     def _convert_to_bins(self, frequency, model='PTS3200'):
@@ -179,7 +182,7 @@ class WaveGen():
         GPIO.cleanup()
 
 
-    def _usleep(self, time):
+    def _usleep(self, time, cal_cnt=2400):
         """
         Sleep for a given number of microseconds.
         WARNING: Needs to be calibrated according to used hardware.
@@ -187,14 +190,22 @@ class WaveGen():
 
         Inputs:
             - time [us]: time of delay
+            - cal_cnt (float/int): calibrated number of cnts needed
+              in order to equal 1 ms
         """
         # Convert time to count number, N
-        const = 5714/1e3
-        N = int(np.round(const*time))
+        min_time = 4 # [us] -- offset value
+        const = cal_cnt/1e3 # conversion from ms to us
+        N = int(np.round(const*(time-min_time)))
         cnt = 0
+        GPIO.output(self.gpio_timer_pin, GPIO.LOW)
         for i in range(N):
+            GPIO.output(self.gpio_timer_pin, GPIO.HIGH)
+            # cnt += 1
+            GPIO.output(self.gpio_timer_pin, GPIO.LOW)
+            GPIO.output(self.gpio_timer_pin, GPIO.HIGH)
+            GPIO.output(self.gpio_timer_pin, GPIO.LOW)
             cnt += 1
-
 
     def blank(self):
         """
