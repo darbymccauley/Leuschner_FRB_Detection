@@ -1,14 +1,14 @@
 import RPi.GPIO as GPIO
 import numpy as np
-import subprocess
-
+import time as Time
 
 # GPIO pins
 GPIO_DATA_PIN = 23 # data pin
 GPIO_SCLK_PIN = 22 # serial clock pin
 GPIO_PCLK_PIN = 24 # parallel clock pin
 GPIO_TIMER_PIN = 26 # pin used for usleep timer/clock
-# GPIO_PINS = [GPIO_DATA_PIN, GPIO_SCLK_PIN, GPIO_PCLK_PIN, GPIO_TIMER_PIN]
+GPIO_LOOP_PIN = 16 # pin used to signal end of loops
+# GPIO_PINS = [GPIO_DATA_PIN, GPIO_SCLK_PIN, GPIO_PCLK_PIN, GPIO_TIMER_PIN, GPIO_LOOP_PIN]
 
 # PTS model
 MODEL = 'PTS3200'
@@ -22,20 +22,21 @@ NO_SIGNAL = 7.2e6 # Hz
 
 class WaveGen():
 
-    def __init__(self, gpio_data_pin=GPIO_DATA_PIN, gpio_sclk_pin=GPIO_SCLK_PIN, gpio_pclk_pin=GPIO_PCLK_PIN, gpio_timer_pin=GPIO_TIMER_PIN, model=MODEL, no_signal=NO_SIGNAL):
+    def __init__(self, gpio_data_pin=GPIO_DATA_PIN, gpio_sclk_pin=GPIO_SCLK_PIN, gpio_pclk_pin=GPIO_PCLK_PIN, gpio_timer_pin=GPIO_TIMER_PIN, gpio_loop_pin=GPIO_LOOP_PIN, model=MODEL, no_signal=NO_SIGNAL):
         """
         Instantiate use of PTS and RPi GPIO pins.
         """
         # Set drive strength 
-        strength = subprocess.call('./drive_strength.sh')
-        print('GPIO pin drive strength has been set:', strength, 'mA')
+        # strength = subprocess.call('./drive_strength.sh')
+        # print('GPIO pin drive strength has been set:', strength, 'mA')
 
         self.model = model
         self.gpio_data_pin = gpio_data_pin
         self.gpio_sclk_pin = gpio_sclk_pin
         self.gpio_pclk_pin = gpio_pclk_pin
         self.gpio_timer_pin = gpio_timer_pin
-        self.gpio_pins = [self.gpio_data_pin, self.gpio_sclk_pin, self.gpio_pclk_pin, self.gpio_timer_pin]
+        self.gpio_loop_pin = gpio_loop_pin
+        self.gpio_pins = [self.gpio_data_pin, self.gpio_sclk_pin, self.gpio_pclk_pin, self.gpio_timer_pin, self.gpio_loop_pin]
         self.no_signal = no_signal
 
         GPIO.setwarnings(False) # ignore RPi.GPIO internal messaging
@@ -46,7 +47,8 @@ class WaveGen():
         GPIO.output(self.gpio_data_pin, GPIO.LOW)
         GPIO.output(self.gpio_sclk_pin, GPIO.HIGH)
         GPIO.output(self.gpio_pclk_pin, GPIO.HIGH)
-        GPIO.output(self.gpio_timer_pin, GPIO.HIGH)
+        GPIO.output(self.gpio_timer_pin, GPIO.LOW)
+        GPIO.output(self.gpio_loop_pin, GPIO.LOW)
 
 
     def _convert_to_bins(self, frequency, model='PTS3200'):
@@ -108,10 +110,11 @@ class WaveGen():
                     # print('Shifting in a 0 at', bit_cnt)
                     GPIO.output(self.gpio_data_pin, GPIO.LOW)
                 elif split_binary_numbers[i][j] == 1:
+            # CHANGE?
                     # print('Shifting in a 1 at', bit_cnt)
                     GPIO.output(self.gpio_data_pin, GPIO.HIGH)
                 # XXX User interaction for bit by bit input for debugging and probing
-                self._usleep(2) # let the data settle before pulsing clk
+                self._usleep(3) # let the data settle before pulsing clk
 
                 GPIO.output(self.gpio_sclk_pin, GPIO.LOW)
                 self._usleep(5) # stretch out clk pulse to be conservative
@@ -166,7 +169,7 @@ class WaveGen():
         else:
             binary_list = freq # already in binary form
         self._load_frequency(binary_list) # load binary data to GPIO
-        self._usleep(2) # conservative wait after data has been serially shifted before doing parallel load
+        self._usleep(3) # conservative wait after data has been serially shifted before doing parallel load
         self._send_command() # send data to PTS
 
 
@@ -177,30 +180,51 @@ class WaveGen():
         GPIO.cleanup()
 
 
-    def _usleep(self, time, cal_cnt=2400):
+    def _usleep(self, time, cal_cnt=445):
         """
         Sleep for a given number of microseconds.
+
         WARNING: Needs to be calibrated according to used hardware.
-        (Current estimate for RPi4 + PTS3200: 2400 cnts = 1 ms)
+        (Current estimate for RPi4B + PTS3200: 445 cnts = 1 ms.
+         NOTE: /boot/config.txt file altered s.t. arm_freq fixed at 700MHz
+         and core_freq_min=500MHz [core_freq set to value misc websites
+         suggested to improve timing stability]. OS interups are NOT
+         disabled so timing/delays can be off by [measured] ~200us. This 
+         "works" for sleeps of >= 12us.)
 
         Inputs:
             - time [us]: time of delay
             - cal_cnt (float/int): calibrated number of cnts needed
               in order to equal 1 ms
         """
-        # Convert time to count number, N
-        min_time = 4 # [us] -- offset value
+        min_time = 4 # [us] -- offset value for misc Python comp. time
+        if time <= 2:
+            return
+        bit_val = GPIO.LOW
+        GPIO.output(self.gpio_timer_pin, bit_val)
+        # any time greater than minimum:
+        ms_time = np.trunc(time/1e3) - 1 # subtract 1ms because OS take a bit of time
+        if ms_time <= 0:
+            ms_time = 0
+            us_time = time
+        elif ms_time > 0:
+            us_time = time - (ms_time*1e3) - 190 # subtract 190us OS time
         const = cal_cnt/1e3 # conversion from ms to us
-        N = int(np.round(const*(time-min_time)))
-        cnt = 0
-        GPIO.output(self.gpio_timer_pin, GPIO.LOW)
-        for i in range(N):
+        N = int(np.round(const*(us_time-min_time)))
+        if ms_time != 0: # for delays larger than or equal to 2ms 
             GPIO.output(self.gpio_timer_pin, GPIO.HIGH)
-            # cnt += 1
+            Time.sleep(ms_time/1e3) # Time.sleep wants seconds
             GPIO.output(self.gpio_timer_pin, GPIO.LOW)
-            GPIO.output(self.gpio_timer_pin, GPIO.HIGH)
-            GPIO.output(self.gpio_timer_pin, GPIO.LOW)
-            cnt += 1
+        for i in range(N): # for delays 10-2000us and fractional ms delays 
+            if bit_val == GPIO.HIGH:
+                bit_val = GPIO.LOW
+            else:
+                bit_val = GPIO.HIGH
+            GPIO.output(self.gpio_timer_pin, bit_val)
+        GPIO.output(self.gpio_timer_pin, GPIO.LOW) # return to safe value
+        # GPIO.output(self.gpio_loop_pin, GPIO.HIGH)
+        # GPIO.output(self.gpio_loop_pin, GPIO.LOW) # return to safe value
+
 
     def blank(self):
         """
