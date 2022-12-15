@@ -258,7 +258,7 @@ class WaveGen():
                 self._make_wave(f)
                 self._usleep(dt)
         for f in bin_freqs:
-            print('freq=',f)
+            # print('freq=',f)
             self._make_wave(f)
             self._usleep(dt)
 
