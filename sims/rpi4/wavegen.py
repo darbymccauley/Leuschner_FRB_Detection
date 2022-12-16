@@ -6,8 +6,8 @@ import time as Time
 GPIO_DATA_PIN = 23 # data pin
 GPIO_SCLK_PIN = 22 # serial clock pin
 GPIO_PCLK_PIN = 24 # parallel clock pin
-GPIO_TIMER_PIN = 26 # pin used for usleep timer/clock
-GPIO_LOOP_PIN = 16 # pin used to signal end of loops
+GPIO_TIMER_PIN = 26 # pin used for sleep timer/clock
+GPIO_LOOP_PIN = 16 # pin used for easy testing and debugging
 # GPIO_PINS = [GPIO_DATA_PIN, GPIO_SCLK_PIN, GPIO_PCLK_PIN, GPIO_TIMER_PIN, GPIO_LOOP_PIN]
 
 # PTS model
@@ -19,6 +19,8 @@ MODEL = 'PTS3200'
 # frequency will later be filtered out via a 250 MHz high-pass filter.
 NO_SIGNAL = 7.2e6 # Hz
 
+# Dispersion measure constant
+CONST = 4140e12 # s Hz^2 / (pc cm^3)
 
 class WaveGen():
 
@@ -107,13 +109,9 @@ class WaveGen():
         for i in range(9, -1, -1): # count from most to least significant bit
             for j in range(len(split_binary_numbers[i])-1, -1, -1):
                 if split_binary_numbers[i][j] == 0:
-                    # print('Shifting in a 0 at', bit_cnt)
                     GPIO.output(self.gpio_data_pin, GPIO.LOW)
                 elif split_binary_numbers[i][j] == 1:
-            # CHANGE?
-                    # print('Shifting in a 1 at', bit_cnt)
                     GPIO.output(self.gpio_data_pin, GPIO.HIGH)
-                # XXX User interaction for bit by bit input for debugging and probing
                 self._usleep(3) # let the data settle before pulsing clk
 
                 GPIO.output(self.gpio_sclk_pin, GPIO.LOW)
@@ -126,7 +124,6 @@ class WaveGen():
         """
         Triggers send of frequency from RPi to PTS.
         """
-        # User interaction so we have control over change -- Verbose commands XXX
         GPIO.output(self.gpio_pclk_pin, GPIO.LOW) # triggers send to PTS
         GPIO.output(self.gpio_pclk_pin, GPIO.HIGH) # return parallel clock to off state
 
@@ -175,7 +172,7 @@ class WaveGen():
 
     def cleanup_gpio(self):
         """
-        Cleanup GPIOs to ensure no damage is done to RPi.
+        GPIO reset/cleanup.
         """
         GPIO.cleanup()
 
@@ -240,7 +237,7 @@ class WaveGen():
        
 
 
-    def linear_sweep(self, f_min=1150e6, f_max=1650e6, nchans= 2048, dt=1000, model='PTS3200', continuous=False):
+    def linear_sweep(self, f_min=1150e6, f_max=1650e6, nchans= 2048, dt=1e-3, model='PTS3200', continuous=False):
         """
         Generate a continuous linear (simple) sweep.
 
@@ -248,19 +245,19 @@ class WaveGen():
             - f_min (float)|[Hz]: minimum frequency of sweep
             - f_max (float)|[Hz]: maximum frequency of sweep
             - nchans (int): number of frequency channels
-            - dt (float)|[us]: time until next frequncy change
+            - dt (float)|[s]: time until next frequncy change
             - continuous (bool): single or repeating sweep?
         """
+        dt_us = dt*1e6 # convert from s to us
         freqs = np.linspace(f_min, f_max, nchans)
         bin_freqs = self._convert_freq_list(freqs, model)
         while continuous:
             for f in bin_freqs:
                 self._make_wave(f)
-                self._usleep(dt)
+                self._usleep(dt_us)
         for f in bin_freqs:
-            # print('freq=',f)
             self._make_wave(f)
-            self._usleep(dt)
+            self._usleep(dt_us)
 
 
     def _dm_delay(self, DM, freq):
@@ -271,14 +268,12 @@ class WaveGen():
         Inputs:
             - DM (float)|[pc*cm^-3]: dispersion measure
             - freq (float)|[Hz]: frequency
-        Returns: pulse time delay in [us]
+        Returns: pulse time delay in [s]
         """
-        const = 4140
-        A = DM*const*1e6 # 1e6 for conversion to us
-        return A/((freq/1e6)**2)
+        A = CONST*DM
+        return A / freq**2
 
-
-    def dm_sweep(self, DM=332.72, f_min=1150e6, f_max=1650e6, dt=1000, model='PTS3200', continuous=False):
+    def dm_sweep(self, DM=332.72, f_min=1150e6, f_max=1650e6, dt=1e-3, model='PTS3200', continuous=False):
         """
         Generates a frequency sweep that mirrors that caused
         by dispersion measure influence.
@@ -288,28 +283,28 @@ class WaveGen():
               is DM for SGR1935+2154)
             - f_min (float)|[Hz]: minimum frequency of sweep
             - f_max (float)|[Hz]: maximum frequency of sweep
-            - dt (float)|[us]: sweep update interval
+            - dt (float)|[s]: sweep update interval
             - model (str): PTS model used. Default is PTS3200.
               Accepts PTS3200, PTS500, PTS300.
             - continuous (bool): single or repeating sweep?
         """
-        const = 4140e6
-        A = const*DM
+        dt_us = dt*1e6 # convert from s to us
+        A = CONST*DM
         t0 = self._dm_delay(DM, f_max)
         tf = self._dm_delay(DM, f_min)
         ts = np.arange(t0, tf+dt, dt)
-        freqs = np.sqrt(A/ts)*1e6 # 1e6 for proper conversion of freqs into Hz -- these frequencies will be sent to the PTS
+        freqs = np.sqrt(A/ts) # these frequencies will be sent to the PTS
         bin_freqs = self._convert_freq_list(freqs, model) # convert frequencies into binary form
         while continuous:
             for f in bin_freqs:
                 self._make_wave(f)
-                self._usleep(dt)
+                self._usleep(dt_us)
         for f in bin_freqs:
             self._make_wave(f)
-            self._usleep(dt)
+            self._usleep(dt_us)
 
 
-    def mock_dm_obs(self, wait_time, DM=332.72, f_min=1150e6, f_max=1650e6, dt=1000, model='PTS3200'):
+    def mock_dm_obs(self, wait_time, DM=332.72, f_min=1150e6, f_max=1650e6, dt=1e-3, model='PTS3200'):
         """
         Simulate an FRB observation in collected time-dependent voltage data.
 
@@ -319,13 +314,9 @@ class WaveGen():
               is DM for SGR1935+2154)
             - f_min (float)|[Hz]: minimum frequency of sweep
             - f_max (float)|[Hz]: maximum frequency of sweep
-            - dt (float)|[us]: sweep update interval
+            - dt (float)|[s]: sweep update interval
             - model (str): PTS model used. Default is PTS3200.
               Accepts PTS3200, PTS500, PTS300.
-            - save (bool): save mock observation to file?
-
-        Returns:
-            - If save, file containing voltage-time data.
         """
         wait_time_us = wait_time*1e6 # convert to microseconds
         self.continuous_wave(self.no_signal) # "no signal" signal
@@ -334,12 +325,24 @@ class WaveGen():
         self.continuous_wave(self.no_signal) # go back to "no signal" signal
       
 
-    def mock_linear_obs(self, wait_time, f_min=1150e6, f_max=1650e6, nchans=2048, dt=1000, model='PTS3200'):
+    def mock_linear_obs(self, wait_time, f_min=1150e6, f_max=1650e6, nchans=2048, dt=1e-3, model='PTS3200'):
+        """
+        Simulate a linear sweep of frequencies collected in time-dependent voltage data.
+
+        Inputs:
+            - wait_time (float)|[s]: time until sweep begins
+            - f_min (float)|[Hz]: minimum frequency of sweep
+            - f_max (float)|[Hz]: maximum frequency of sweep
+            - nchans (int): number of frequency channels (i.e. number of sweep steps)
+            - dt (float)|[s]: sweep update interval
+            - model (str): PTS model used. Default is PTS3200.
+              Accepts PTS3200, PTS500, PTS300.
+        """
         wait_time_us = wait_time*1e6 # convert to microseconds
-        self.continuous_wave(self.no_signal)
+        self.continuous_wave(self.no_signal) # "no signal" signal
         self._usleep(wait_time_us)
-        self.linear_sweep(f_min, f_max, nchans, dt, model, continuous=False)
-        self.continuous_wave(self.no_signal)
+        self.linear_sweep(f_min, f_max, nchans, dt, model, continuous=False) # sweep
+        self.continuous_wave(self.no_signal) # go back to "no signal" signal
 
 
 
