@@ -1,6 +1,7 @@
 import RPi.GPIO as GPIO
 import numpy as np
 import time as Time
+import subprocess
 
 # GPIO pins
 GPIO_DATA_PIN = 23 # data pin
@@ -29,8 +30,8 @@ class WaveGen():
         Instantiate use of PTS and RPi GPIO pins.
         """
         # Set drive strength 
-        # strength = subprocess.call('./drive_strength.sh')
-        # print('GPIO pin drive strength has been set:', strength, 'mA')
+        strength = subprocess.call('./drive_strength.sh')
+        print('GPIO pin drive strength has been set:', strength, 'mA')
 
         self.model = model
         self.gpio_data_pin = gpio_data_pin
