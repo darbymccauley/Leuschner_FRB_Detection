@@ -1,7 +1,7 @@
 import RPi.GPIO as GPIO
 import numpy as np
 import time as Time
-import subprocess
+import os
 
 # GPIO pins
 GPIO_DATA_PIN = 23 # data pin
@@ -23,15 +23,27 @@ NO_SIGNAL = 7.2e6 # Hz
 # Dispersion measure constant
 CONST = 4140e12 # s Hz^2 / (pc cm^3)
 
+# Set GPIO drive strength
+DRIVE_STRENGTH = 4 # mA
+
 class WaveGen():
 
-    def __init__(self, gpio_data_pin=GPIO_DATA_PIN, gpio_sclk_pin=GPIO_SCLK_PIN, gpio_pclk_pin=GPIO_PCLK_PIN, gpio_timer_pin=GPIO_TIMER_PIN, gpio_loop_pin=GPIO_LOOP_PIN, model=MODEL, no_signal=NO_SIGNAL):
+    def __init__(self, 
+                 drive_strength=DRIVE_STRENGTH, 
+                 gpio_data_pin=GPIO_DATA_PIN, 
+                 gpio_sclk_pin=GPIO_SCLK_PIN, 
+                 gpio_pclk_pin=GPIO_PCLK_PIN, 
+                 gpio_timer_pin=GPIO_TIMER_PIN, 
+                 gpio_loop_pin=GPIO_LOOP_PIN, 
+                 model=MODEL, 
+                 no_signal=NO_SIGNAL):
         """
         Instantiate use of PTS and RPi GPIO pins.
         """
         # Set drive strength 
-        strength = subprocess.call('./drive_strength.sh')
-        print('GPIO pin drive strength has been set:', strength, 'mA')
+        self.drive_strength = drive_strength 
+        # os.system('sudo pigpiod') #run pigpio demon
+        os.system('pigs pads 0 ' + str(self.drive_strength)) # set strength
 
         self.model = model
         self.gpio_data_pin = gpio_data_pin
