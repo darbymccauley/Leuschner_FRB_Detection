@@ -23,17 +23,12 @@ def phs_sum(np.ndarray[np.complex64_t, ndim=2] d,
 
 
 class FDMT:
-    def __init__(self, ntimes, nfreqs, fmin=1150e6, fmax=1650e6, maxDM=500, dtype='float32', cdtype='complex64'):
+    def __init__(self, freqs, times, maxDM=500, dtype='float32', cdtype='complex64'):
         self.cache = {}
-        self.maxDM = maxDM
         self.dtype = dtype
         self.cdtype = cdtype
-#         self.nfreqs = freqs.size
-#         self.ntimes = times.size
-        self.nfreqs = nfreqs
-        self.ntimes = ntimes
-        times = np.linspace(0, 1, self.ntimes)
-        freqs = np.linspace(fmin, fmax, self.nfreqs)
+        self.nfreqs = freqs.size
+        self.ntimes = times.size
         _ffreq = np.fft.rfftfreq(self.ntimes, times[1] - times[0]).astype(dtype)
         self.stages = int(np.log2(self.nfreqs))
         chans = np.arange(self.nfreqs, dtype='uint32')
