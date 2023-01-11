@@ -2,15 +2,17 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+import os
 import argparse
 
 parser = argparse.ArgumentParser(description='Generate waterfall plot of data within file.')
-parser.add_argument('filename', type=str,  help='Data file name(.dat)')
+parser.add_argument('file_path', type=str,  help='Data file path')
 parser.add_argument('fmin', type=float, help='Minimum frequency of band in [MHz]')
 parser.add_argument('fmax', type=float, help='Maximum frequency of band in [MHz]')
 
 args = parser.parse_args()
-FILENAME = args.filename
+FILE_PATH = args.file_path
+FILENAME = os.path.split(FILE_PATH)[-1] # grab file name from file path
 FMIN = args.fmin
 FMAX = args.fmax
 
@@ -27,7 +29,7 @@ info_chans = 12 # channels containing spectra information
 header = 1024
 
 
-f = open(FILENAME, 'rb')
+f = open(FILE_PATH, 'rb')
 y = np.frombuffer(f.read(), dtype='uint16', offset=header)
 assert (y.size/total_chans).is_integer(), 'Non-integer number of spectra in file. Got {0}'.format(y.size/total_chans)+'spectra.'
 nspec = int(y.size/total_chans)
