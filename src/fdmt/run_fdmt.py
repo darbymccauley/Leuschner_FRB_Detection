@@ -3,6 +3,7 @@ from fdmt_homebrew import FDMT
 import matplotlib.pyplot as plt
 # import os
 import argparse
+import timeit
 
 parser = argparse.ArgumentParser('Run FDMT algorithm on data file.')
 parser.add_argument('file_path', type=str, help='Data file path')
@@ -38,16 +39,23 @@ f = open(FILE_PATH, 'rb')
 y = np.frombuffer(f.read(), dtype='uint16', offset=header)
 assert (y.size/total_chans).is_integer(), 'Non-integer number of spectra in file. Got {0}'.format(y.size/total_chans)+'spectra.'
 nspec = int(y.size/total_chans)
-# tsamp = 0.1 # [ms] -- SNAP collects a new spectrum every 0.1 ms
-TIMES = np.linspace(0, 1, nspec)
+TIMES = np.arange(nspec)*1e-4
+
 
 data =  y.reshape([nspec, total_chans]) # reshape into [nspec, 2060]
-data = data[:, info_chans:] # ignore info_chans
-
+data = data[:, info_chans:] # ignore info_chans so that data now takes shape [nspec, 2048]
+# data.shape = data.shape[0:1] + (-1, 8)
+# data = data.sum(axis=-1)
+# FREQS.shape = (-1, 8)
+# FREQS = FREQS.mean(axis=-1)
+# data = np.random.normal(size=data.shape)
 
 MAXDM = 500
 fdmt = FDMT(freqs=FREQS, times=TIMES, maxDM=MAXDM)
+import time
+start = time.time()
 dmt = fdmt.apply(data)
+print('FDMT execution time:', time.time() - start)
 
 print(dmt.shape)
 t0, dm0 = inds = np.unravel_index(np.argmax(dmt, axis=None), dmt.shape)
