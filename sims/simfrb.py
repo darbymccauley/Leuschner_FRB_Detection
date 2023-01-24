@@ -4,7 +4,7 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-import scipy.signal as signal
+import argparse
 
 CONST = 4140e12 # s Hz^2 / (pc / cm^3)
 
@@ -101,30 +101,42 @@ class SimFRB:
         profile += np.random.normal(size=profile.shape, loc=10) # add noise
         profile -= np.mean(profile, axis=0, keepdims=True)
         return profile
+    
+####################################################################################################################
 
+if __name__ == '__main__':
     
+    parser = argparse.ArgumentParser(description='Generate a simulated FRB pulse with given characteristics.')
+    parser.add_argument('ntimes', type=int, help='Number of spectra/integration times')
+    parser.add_argument('nfreqs', type=int, help='Number of frequency channels')
+    parser.add_argument('f_min', type=float, help='Minimum frequency of base-band [MHz]')
+    parser.add_argument('f_max', type=float, help='Maximum frequency of base-band [MHz]')
+    parser.add_argument('dm', type=float, help='Dispersion measure [pc*cm^-3]')
+    parser.add_argument('pulse_width', type=float, help='Width of pulse [ms]')
+    parser.add_argument('pulse_amp', type=float, help='Amplitude of pulse')
+    parser.add_argument('t0', type=float, help='Offset of pulse start time [s]')
 
-# if __name__ == '__main__':
-#     NSPEC, NCHANS = 2048, 2048
-#     FMIN, FMAX = 1410e6, 1640e6 # [Hz] 230 MHz bandwidth
-#     frb = pts_frb(ntimes=NSPEC, nfreqs=NCHANS, f_min=FMIN, f_max=FMAX, pulse_amp=10)
-#     plt.figure()
-#     plt.imshow(frb.T, aspect='auto', origin='lower')
-#     plt.show()
+    args = parser.parse_args()
+    NTIMES = args.ntimes
+    NFREQS = args.nfreqs
+    FMIN = args.f_min
+    FMAX = args.f_max
+    DM = args.dm
+    PULSE_WIDTH = args.pulse_width
+    PULSE_AMP = args.pulse_amp
+    T0 = args.t0
     
-#     import sys
-#     sys.path.append('../src/fdmt')
-#     from fdmt_homebrew import FDMT
+    sims = SimFRB()
+    frb = sims.make_frb(NTIMES, NFREQS, FMIN, FMAX, DM, PULSE_WIDTH, PULSE_AMP, T0)
     
-#     MAXDM = 500
-#     FREQS = np.linspace(FMIN, FMAX, NCHANS) # [Hz]
-#     TIMES = np.arange(NSPEC)*1e-4 # [s]
-#     fdmt = FDMT(freqs=FREQS, times=TIMES, maxDM=MAXDM)
-#     dmt = fdmt.apply(frb)
-#     t0, dm0 = inds = np.unravel_index(np.argmax(dmt, axis=None), dmt.shape)
-#     dm = np.linspace(0, MAXDM, NSPEC)[dm0]
-#     print('Measured DM:', dm)
-    
-#     plt.figure()
-#     plt.imshow(dmt, aspect='auto', origin='lower')
-#     plt.show()
+    fig, ax = plt.subplots(constrained_layout=True)
+    im = ax.imshow(frb.T, aspect='auto', origin='lower', extent=[0, NTIMES, 0, NFREQS])
+    ax.set_xlabel('Spectra')
+    ax.set_ylabel('Frequency Channel')
+    ax.set_title('Computer simulated FRB with DM {0:0.2f} pc$\cdot$cm$^3$'.format(DM))
+    ax.set_xlim(0, NTIMES)
+    ax.set_ylim(0, NFREQS)
+    ax2 = ax.twinx()
+    ax2.set_ylim(FMIN/1e6, FMAX/1e6)
+    ax2.set_ylabel('Frequency [MHz]', rotation=270, labelpad=10)
+    plt.show();
