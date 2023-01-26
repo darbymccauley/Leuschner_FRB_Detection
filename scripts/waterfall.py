@@ -18,12 +18,13 @@ FMIN = args.fmin
 FMAX = args.fmax
 
 data = prepare_data(FILE_PATH)
+NSPEC, NCHANS = data.shape
 
 fig, ax = plt.subplots(constrained_layout=True)
-im = ax.imshow(data.T, aspect='auto', origin='lower', extent=[0, nspec, FMIN, FMAX])
+im = ax.imshow(data.T, aspect='auto', origin='lower', extent=[0, NSPEC, FMIN, FMAX])
 cbar = fig.colorbar(im, pad=0.01)
 cbar.set_label('Power', rotation=270, labelpad=20)
-# im.set_clim(0, 5000)
+im.set_clim(0, 5000)
 ax.set_xlabel('Time [ms]')
 ax.set_ylabel('Frequency [MHz]')
 ax.set_title(FILENAME)
