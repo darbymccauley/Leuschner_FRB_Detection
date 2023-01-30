@@ -6,22 +6,22 @@ import numpy as np
 import matplotlib.pyplot as plt
 import argparse
 
-CONST = 4140e12 # s Hz^2 / (pc / cm^3)
-
-def DM_delay(DM, freq):
-    """
-    Computes the frequency-dependent dispersion measure
-    time delay.
-    Inputs:
-        - DM [pc*cm^-3]: dispersion measure
-        - freq [Hz]: frequency
-    Returns:
-        - Pulse time delay in [s] 
-    """
-    return np.float32(DM * CONST) / freq**2
-
 class SimFRB:
-    # def __init__(self
+    def __init__(self):
+        self.CONST = 4140e12 # s Hz^2 / (pc / cm^3)
+
+    def DM_delay(self, DM, freq):
+        """
+        Computes the frequency-dependent dispersion measure
+        time delay.
+        Inputs:
+            - DM [pc*cm^-3]: dispersion measure
+            - freq [Hz]: frequency
+        Returns:
+            - Pulse time delay in [s] 
+        """
+        return np.float32(DM * self.CONST) / freq**2
+
     def make_frb(self, ntimes=4096, nfreqs=2048, f_min=1150e6, f_max=1650e6, DM=332.72, pulse_width=2.12e-3, pulse_amp=2, 
                  t0=2e-3, dtype='float32', cdtype='complex64'):
         """
@@ -39,11 +39,11 @@ class SimFRB:
         Returns:
             - Power matrix of shape (ntimes, nfreqs)
         """
-        times = np.arange(ntimes)*1e-4 # [s]
+        times = np.arange(ntimes)*(1.048e-3) # [s]
         freqs = np.linspace(f_min, f_max, nfreqs)
         dt = times[1] - times[0]
         tmid = times[times.size // 2]
-        delays = DM_delay(DM, freqs)
+        delays = self.DM_delay(DM, freqs)
         delays -= tmid + delays[-1] - t0  # center lowest delay at t0
 
         # assume same inherent profile for all freqs
@@ -60,6 +60,26 @@ class SimFRB:
         profile -= np.mean(profile, axis=0, keepdims=True)
         return profile
 
+    def dedisperse(self, pulse, ntimes=4096, nfreqs=2048, f_min=1150e6, f_max=1650e6, DM=332.72, pulse_width=2.12e-3, pulse_amp=2, t0=2e-3, dtype='float32', cdtype='complex64'):
+        times = np.arange(ntimes)*(1.048e-3) # [s]
+        freqs = np.linspace(f_min, f_max, nfreqs)
+        dt = times[1] - times[0]
+        tmid = times[times.size // 2]
+        delays = self.DM_delay(DM, freqs)
+        delays -= tmid + delays[-1] - t0  # center lowest delay at t0
+
+        # assume same inherent profile for all freqs
+        _pulse = np.fft.rfft(pulse, axis=0).astype(cdtype)
+        _ffreq = np.fft.rfftfreq(pulse.shape[0], dt)
+        phs = np.exp(2j * np.pi * np.outer(_ffreq.astype(dtype), delays.astype(dtype)))
+        _pulse_dly = _pulse * phs.conj()
+        profile = np.fft.irfft(_pulse_dly, axis=0).astype(dtype)
+        # profile += np.random.normal(size=profile.shape, loc=10) # add noise
+        # profile[:,::137] = 0  # blank out rfi
+        # profile[:,300:500] = 0  # blank out rfi
+        # profile[::519] = 100  # rfi
+        # profile -= np.mean(profile, axis=0, keepdims=True)
+        return profile
 
     def pts_frb(self, ntimes=4096, nfreqs=2048, f_min=1150e6, f_max=1650e6, DM=332.72, pulse_width=2.12e-3, pulse_amp=2, 
                 t0=2e-3, dtype='float32', cdtype='complex64'):
@@ -83,7 +103,7 @@ class SimFRB:
         freqs = np.linspace(f_min, f_max, nfreqs)
         dt = times[1] - times[0] # 0.1ms
         tmid = times[times.size // 2]
-        delays = DM_delay(DM, freqs)
+        delays = self.DM_delay(DM, freqs)
         delays -= tmid + delays[-1] - t0  # center lowest delay at t0
 
         # assume same inherent profile for all freqs
@@ -95,7 +115,7 @@ class SimFRB:
         profile = np.fft.irfft(_pulse_dly, axis=0).astype(dtype) 
         # blank out some signal so it mirrors the step behavior of RPi+PTS setup
         profile.shape = (-1, 4, ntimes)
-        profile[:, 0:3] = 0
+        profile[0:, 0:3] = 0
         profile.shape = (-1, ntimes)
         
         profile += np.random.normal(size=profile.shape, loc=10) # add noise
@@ -127,7 +147,7 @@ if __name__ == '__main__':
     T0 = args.t0
     
     sims = SimFRB()
-    frb = sims.make_frb(NTIMES, NFREQS, FMIN, FMAX, DM, PULSE_WIDTH, PULSE_AMP, T0)
+    frb = sims.pts_frb(NTIMES, NFREQS, FMIN, FMAX, DM, PULSE_WIDTH, PULSE_AMP, T0)
     
     fig, ax = plt.subplots(constrained_layout=True)
     im = ax.imshow(frb.T, aspect='auto', origin='lower', extent=[0, NTIMES, 0, NFREQS])
